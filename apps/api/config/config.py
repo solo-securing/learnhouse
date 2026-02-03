@@ -1,4 +1,5 @@
 import os
+import json
 import yaml
 from typing import Literal, Optional
 from pydantic import BaseModel
@@ -34,10 +35,14 @@ class S3ApiConfig(BaseModel):
     bucket_name: str | None
     endpoint_url: str | None
 
+class GGDriveConfig(BaseModel):
+    credential_files: list[str] | None
+
 
 class ContentDeliveryConfig(BaseModel):
-    type: Literal["filesystem", "s3api"]
+    type: Literal["filesystem", "s3api", "ggdrive"]
     s3api: S3ApiConfig
+    ggdrive: GGDriveConfig
 
 
 class HostingConfig(BaseModel):
@@ -227,9 +232,22 @@ def get_learnhouse_config() -> LearnHouseConfig:
         .get("endpoint_url")
     ) or env_endpoint_url
 
+    # GGDrive Credential Files
+    env_ggdrive_credential_files = os.environ.get("LEARNHOUSE_GGDRIVE_CREDENTIAL_FILES")
+    if env_ggdrive_credential_files:
+        try:
+            # Try to parse as JSON first (for arrays like ["file1.json", "file2.json"])
+            ggdrive_credential_files = json.loads(env_ggdrive_credential_files)
+        except (json.JSONDecodeError, ValueError):
+            # Fallback to comma-separated parsing
+            ggdrive_credential_files = [f.strip() for f in env_ggdrive_credential_files.split(",")]
+    else:
+        ggdrive_credential_files = yaml_config.get("ggdrive_credential_files", [])
+
     content_delivery = ContentDeliveryConfig(
         type=content_delivery_type,  # type: ignore
         s3api=S3ApiConfig(bucket_name=bucket_name, endpoint_url=endpoint_url),  # type: ignore
+        ggdrive=GGDriveConfig(credential_files=ggdrive_credential_files)  # type: ignore
     )
 
     # Database config
