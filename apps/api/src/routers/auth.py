@@ -1,4 +1,5 @@
 from datetime import timedelta, datetime, timezone
+import os
 from typing import Literal, Optional
 from fastapi import Depends, APIRouter, HTTPException, Response, status, Request, Form
 from pydantic import BaseModel, EmailStr
@@ -188,7 +189,8 @@ async def login(
         )
 
     # Step 5: Check email verification (required for login)
-    if not user.email_verified:
+    init_admin_email = os.environ.get("LEARNHOUSE_INITIAL_ADMIN_EMAIL", "admin@school.dev")
+    if not user.email_verified and (user.email != init_admin_email):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
