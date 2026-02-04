@@ -1,5 +1,5 @@
 import os
-import tempfile
+import io
 import asyncio
 from pathlib import Path
 from typing import Optional, Dict, Any, Literal
@@ -10,7 +10,7 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
+from googleapiclient.http import MediaFileUpload, MediaIoBaseUpload
 from googleapiclient.errors import HttpError
 
 from config.config import get_learnhouse_config
@@ -307,6 +307,128 @@ class GoogleDriveUploader:
             print(f"\n✗ Upload failed: {error}")
             raise
     
+    def upload_stream(
+        self,
+        file_obj: object,
+        file_name: str,
+        folder_id: Optional[str] = None,
+        mime_type: Optional[str] = None,
+        make_public: bool = False,
+        file_size: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """Upload file from stream/file object to Google Drive with resumable upload.
+        
+        Args:
+            file_obj: File-like object to upload (e.g., SpooledTemporaryFile, BytesIO)
+            file_name: Name for the uploaded file
+            folder_id: Optional parent folder ID
+            mime_type: Optional MIME type (auto-detected if None)
+            make_public: Whether to make file publicly accessible (default: False)
+            file_size: Optional file size in bytes for progress tracking
+        
+        Returns:
+            Dictionary with file information including shareable link if public
+        
+        Raises:
+            HttpError: If upload fails
+        """
+        # Get file size if not provided
+        if file_size is None:
+            # Try to get size from file object
+            try:
+                current_pos = file_obj.tell()
+                file_obj.seek(0, 2)  # Seek to end
+                file_size = file_obj.tell()
+                file_obj.seek(current_pos)  # Restore position
+            except (AttributeError, OSError):
+                file_size = 0
+        
+        file_size_mb = file_size / (1024 * 1024) if file_size > 0 else 0
+        
+        print(f"\n{'='*60}")
+        print(f"Uploading (stream): {file_name}")
+        if file_size > 0:
+            print(f"Size: {file_size_mb:.2f} MB")
+        print(f"{'='*60}")
+        
+        # Prepare metadata
+        file_metadata = {"name": file_name}
+        if folder_id:
+            file_metadata["parents"] = [folder_id]
+        
+        # Wrap file object in BytesIO if needed to ensure seekability
+        if not isinstance(file_obj, io.BytesIO):
+            # Read entire content into BytesIO for seekability
+            file_obj.seek(0)
+            content = file_obj.read()
+            file_obj = io.BytesIO(content)
+        
+        # Create media upload from stream with resumable support
+        media = MediaIoBaseUpload(
+            file_obj,
+            mimetype=mime_type or 'application/octet-stream',
+            resumable=True,
+            chunksize=CHUNK_SIZE
+        )
+        
+        try:
+            # Create upload request
+            request = self.service.files().create(
+                body=file_metadata,
+                media_body=media,
+                fields="id, name, size, webViewLink, mimeType"
+            )
+            
+            # Execute with progress tracking
+            response = None
+            last_progress = -1
+            
+            while response is None:
+                status, response = request.next_chunk()
+                
+                if status:
+                    progress = int(status.progress() * 100)
+                    
+                    # Only print when progress changes significantly
+                    if progress != last_progress and progress % 5 == 0:
+                        print(f"Progress: {progress}% [{self._progress_bar(progress)}]")
+                        last_progress = progress
+            
+            print(f"Progress: 100% [{self._progress_bar(100)}]")
+            
+            file_id = response.get('id')
+            
+            # Make file public if requested
+            shareable_link = None
+            if make_public:
+                print("\nSetting public permissions...")
+                self.make_file_public(file_id)
+                shareable_link = self.get_shareable_link(file_id)
+            
+            # Display results
+            print(f"\n{'='*60}")
+            print(f"✓ Upload complete!")
+            print(f"File ID: {file_id}")
+            print(f"File name: {response.get('name')}")
+            print(f"File size: {int(response.get('size', 0)) / (1024*1024):.2f} MB")
+            print(f"View link: {response.get('webViewLink', 'N/A')}")
+            
+            if shareable_link:
+                print(f"\n🔗 Public Share Link:")
+                print(f"   {shareable_link}")
+                print(f"   (Anyone with this link can view the file)")
+            
+            print(f"{'='*60}\n")
+            
+            # Add shareable link to response
+            response['shareableLink'] = shareable_link
+            
+            return response
+            
+        except HttpError as error:
+            print(f"\n✗ Upload failed: {error}")
+            raise
+    
     @staticmethod
     def _progress_bar(progress: int, length: int = 40) -> str:
         """Generate a text progress bar.
@@ -333,7 +455,8 @@ def get_google_drive_uploader() -> GoogleDriveUploader:
         _uploader = GoogleDriveUploader()
     return _uploader
 
-async def upload_to_google_drive(
+
+async def stream_upload_to_google_drive(
     course_uuid: str,
     activity_uuid: str,
     type_of_dir: Literal["orgs", "users"],
@@ -342,7 +465,7 @@ async def upload_to_google_drive(
     file_and_format: str,
 ) -> str:
     """
-    Upload video to Google Drive
+    Upload video to Google Drive directly from stream
     
     Returns:
         Google Drive file preview link
@@ -365,23 +488,24 @@ async def upload_to_google_drive(
             folder_id = uploader.get_or_create_folder(activity_uuid, parent_id=folder_id)
             folder_id = uploader.get_or_create_folder("video", parent_id=folder_id)
             
-            # 3. Save uploaded file temporarily
-            with tempfile.TemporaryDirectory(prefix="LearnHouse_") as temp_dir:
-                temp_file_path = os.path.join(temp_dir, file_and_format)
-
-                with open(temp_file_path, "wb") as f:
-                    while True:
-                        chunk = file_obj.read(CHUNK_SIZE)
-                        if not chunk:
-                            break
-                        f.write(chunk)
-
-                    # 4. Upload file to Google Drive
-                    result = uploader.upload_file(
-                        file_path=temp_file_path,
-                        folder_id=folder_id,
-                        make_public=True,
-                    )
+            # 3. Get file size for progress tracking (if possible)
+            file_size = None
+            try:
+                current_pos = file_obj.tell()
+                file_obj.seek(0, 2)  # Seek to end
+                file_size = file_obj.tell()
+                file_obj.seek(current_pos)  # Restore position
+            except (AttributeError, OSError):
+                pass
+            
+            # 4. Upload file directly from stream (no temporary file)
+            result = uploader.upload_stream(
+                file_obj=file_obj,
+                file_name=file_and_format,
+                folder_id=folder_id,
+                make_public=True,
+                file_size=file_size
+            )
 
             # 5. Return shareable link        
             shareable_link = result.get("shareableLink")

@@ -135,6 +135,7 @@ async def create_video_activity(
             if video_storage_type == "ggdrive" and "shareable_link" in result:
                 activity.content = {
                     **activity.content,
+                    "type": "ggdrive",
                     "shareable_link": result["shareable_link"]
                 }
                 db_session.add(activity)
