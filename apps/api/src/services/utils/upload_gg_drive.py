@@ -160,7 +160,7 @@ class GoogleDriveUploader:
         return folder_id
     
     def make_file_public(self, file_id: str) -> Dict[str, str]:
-        """Make file publicly accessible to anyone with the link.
+        """Make file publicly accessible to anyone with the link (view-only).
         
         Args:
             file_id: ID of the file to make public
@@ -183,8 +183,20 @@ class GoogleDriveUploader:
                 body=permission,
                 fields='id'
             ).execute()
+
+            # Update file properties to prevent copying and downloading
+            file_properties = {
+                'copyRequiresWriterPermission': True,  # Prevent copying
+                'writersCanShare': False,  # Prevent resharing
+            }
+
+            self.service.files().update(
+                fileId=file_id,
+                body=file_properties,
+                fields='id'
+            ).execute()
             
-            print("✓ File is now publicly accessible")
+            print("✓ File is now publicly accessible (view-only, no download/copy)")
             return result
             
         except HttpError as error:

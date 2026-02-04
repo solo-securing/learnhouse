@@ -133,6 +133,7 @@ async def create_video_activity(
 
             # Update activity.content if video_storage_type is ggdrive
             if video_storage_type == "ggdrive" and "shareable_link" in result:
+                activity.activity_sub_type = ActivitySubTypeEnum.SUBTYPE_VIDEO_GGDRIVE
                 activity.content = {
                     **activity.content,
                     "type": "ggdrive",

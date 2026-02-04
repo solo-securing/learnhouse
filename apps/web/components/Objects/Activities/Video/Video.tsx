@@ -18,6 +18,7 @@ interface VideoActivityProps {
     content: {
       filename?: string
       uri?: string
+      shareable_link?: string
     }
     details?: VideoDetails
   }
@@ -82,7 +83,7 @@ function VideoActivity({ activity, course }: VideoActivityProps) {
                       end: activity.details?.endTime || undefined,
                       controls: 1,
                       modestbranding: 1,
-                      rel: 0
+                      rel: 0,
                     },
                   }}
                   videoId={videoId}
@@ -92,6 +93,29 @@ function VideoActivity({ activity, course }: VideoActivityProps) {
                     }
                   }}
                 />
+              </div>
+            </div>
+          )}
+          {activity.activity_sub_type === 'SUBTYPE_VIDEO_GGDRIVE' && (
+            <div className="my-3 md:my-5 w-full">
+              <div className="relative w-full aspect-video rounded-lg overflow-hidden ring-1 ring-gray-300/30 dark:ring-gray-600/30 sm:ring-gray-200/10 sm:dark:ring-gray-700/20 shadow-xs sm:shadow-none">
+                {activity.content?.shareable_link ? (
+                  <iframe
+                    key={activity.activity_uuid}
+                    src={activity.content.shareable_link}
+                    className="absolute inset-0 w-full h-full border-0"
+                    allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                    // use sandbox to prevent user going to direct link
+                    sandbox="allow-same-origin allow-scripts allow-presentation"
+                    referrerPolicy="no-referrer"
+                    onContextMenu={(e) => e.preventDefault()}
+                  />
+                ) : (
+                  <div className="absolute inset-0 flex items-center justify-center bg-gray-900 text-white">
+                    <p className="text-center">Video URL not available</p>
+                  </div>
+                )}
               </div>
             </div>
           )}
