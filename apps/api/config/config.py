@@ -35,13 +35,20 @@ class S3ApiConfig(BaseModel):
     bucket_name: str | None
     endpoint_url: str | None
 
-class GGDriveConfig(BaseModel):
-    credential_files: list[str] | None
-
 
 class ContentDeliveryConfig(BaseModel):
-    type: Literal["filesystem", "s3api", "ggdrive"]
+    type: Literal["filesystem", "s3api"]
     s3api: S3ApiConfig
+
+
+class GGDriveConfig(BaseModel):
+    credentials_file: str | None
+    token_file: str | None
+    base_folder: str | None
+
+
+class VideoStorageConfig(BaseModel):
+    type: Literal["filesystem", "s3api", "ggdrive"]
     ggdrive: GGDriveConfig
 
 
@@ -94,6 +101,7 @@ class LearnHouseConfig(BaseModel):
     ai_config: AIConfig
     mailing_config: MailingConfig
     payments_config: InternalPaymentsConfig
+    video_storage_config: VideoStorageConfig
 
 
 def get_learnhouse_config() -> LearnHouseConfig:
@@ -232,22 +240,9 @@ def get_learnhouse_config() -> LearnHouseConfig:
         .get("endpoint_url")
     ) or env_endpoint_url
 
-    # GGDrive Credential Files
-    env_ggdrive_credential_files = os.environ.get("LEARNHOUSE_GGDRIVE_CREDENTIAL_FILES")
-    if env_ggdrive_credential_files:
-        try:
-            # Try to parse as JSON first (for arrays like ["file1.json", "file2.json"])
-            ggdrive_credential_files = json.loads(env_ggdrive_credential_files)
-        except (json.JSONDecodeError, ValueError):
-            # Fallback to comma-separated parsing
-            ggdrive_credential_files = [f.strip() for f in env_ggdrive_credential_files.split(",")]
-    else:
-        ggdrive_credential_files = yaml_config.get("ggdrive_credential_files", [])
-
     content_delivery = ContentDeliveryConfig(
         type=content_delivery_type,  # type: ignore
         s3api=S3ApiConfig(bucket_name=bucket_name, endpoint_url=endpoint_url),  # type: ignore
-        ggdrive=GGDriveConfig(credential_files=ggdrive_credential_files)  # type: ignore
     )
 
     # Database config
@@ -334,6 +329,42 @@ def get_learnhouse_config() -> LearnHouseConfig:
         is_ai_enabled=bool(is_ai_enabled),
     )
 
+    # Video Storage Config
+    env_video_storage_type = os.environ.get("LEARNHOUSE_VIDEO_STORAGE_TYPE")
+    video_storage_type: str = env_video_storage_type or (
+        (yaml_config.get("video_storage_config", {}).get("type"))
+        or "filesystem"
+    )  # default to filesystem
+
+    # GGDrive Credential Files
+    credentials_folder = os.path.join(os.path.dirname(__file__), "gg_drive_credentials")
+
+    env_credentials_file_name = os.environ.get("LEARNHOUSE_GGDRIVE_CREDENTIALS_FILE")
+    credentials_file_name = (
+        yaml_config.get("hosting_config", {})
+        .get("content_delivery", {})
+        .get("ggdrive", {})
+        .get("credentials_file")
+    ) or env_credentials_file_name
+    ggdrive_credentials_file_path = os.path.join(credentials_folder, credentials_file_name) if credentials_file_name else None
+    
+    env_token_file_name = os.environ.get("LEARNHOUSE_GGDRIVE_TOKEN_FILE")
+    token_file_name = (
+        yaml_config.get("hosting_config", {})
+        .get("content_delivery", {})
+        .get("ggdrive", {})
+        .get("token_file")
+    ) or env_token_file_name
+    ggdrive_token_file_path = os.path.join(credentials_folder, token_file_name) if token_file_name else None
+
+    env_base_folder = os.environ.get("LEARNHOUSE_GGDRIVE_BASE_FOLDER")
+    ggdrive_base_folder = (
+        yaml_config.get("hosting_config", {})
+        .get("content_delivery", {})
+        .get("ggdrive", {})
+        .get("base_folder")
+    ) or env_base_folder
+
     # Create LearnHouseConfig object
     config = LearnHouseConfig(
         site_name=site_name,
@@ -361,7 +392,15 @@ def get_learnhouse_config() -> LearnHouseConfig:
                 stripe_webhook_connect_secret=stripe_webhook_connect_secret,
                 stripe_client_id=stripe_client_id
             )
-        )
+        ),
+        video_storage_config=VideoStorageConfig(
+            type=video_storage_type,
+            ggdrive=GGDriveConfig(
+                credentials_file=ggdrive_credentials_file_path,
+                token_file=ggdrive_token_file_path,
+                base_folder=ggdrive_base_folder
+            )
+        ),
     )
 
     return config

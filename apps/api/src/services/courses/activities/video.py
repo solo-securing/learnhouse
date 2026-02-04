@@ -21,6 +21,7 @@ from src.services.courses.activities.uploads.videos import upload_video
 from fastapi import HTTPException, status, UploadFile, Request
 from uuid import uuid4
 from datetime import datetime
+from config.config import get_learnhouse_config
 from src.security.courses_security import courses_rbac_check_for_activities
 
 
@@ -97,21 +98,41 @@ async def create_video_activity(
             detail="Video : No video file provided",
         )
 
-    activity_object = Activity(
-        name=name,
-        activity_type=ActivityTypeEnum.TYPE_VIDEO,
-        activity_sub_type=ActivitySubTypeEnum.SUBTYPE_VIDEO_HOSTED,
-        activity_uuid=activity_uuid,
-        org_id=coursechapter.org_id,
-        course_id=coursechapter.course_id,
-        content={
-            "filename": "video." + video_format,
-            "activity_uuid": activity_uuid,
-        },
-        details=details if isinstance(details, dict) else json.loads(details),
-        creation_date=str(datetime.now()),
-        update_date=str(datetime.now()),
-    )
+    learnhouse_config = get_learnhouse_config()
+    video_storage_type = learnhouse_config.video_storage_config.type
+
+    if video_storage_type == "ggdrive":
+        activity_object = Activity(
+            name=name,
+            activity_type=ActivityTypeEnum.TYPE_VIDEO,
+            activity_sub_type=ActivitySubTypeEnum.SUBTYPE_VIDEO_GGDRIVE,
+            activity_uuid=activity_uuid,
+            org_id=coursechapter.org_id,
+            course_id=coursechapter.course_id,
+            content={
+                "shareable_link": "",
+                "activity_uuid": activity_uuid,
+            },
+            details=details if isinstance(details, dict) else json.loads(details),
+            creation_date=str(datetime.now()),
+            update_date=str(datetime.now()),
+        )
+    else:
+        activity_object = Activity(
+            name=name,
+            activity_type=ActivityTypeEnum.TYPE_VIDEO,
+            activity_sub_type=ActivitySubTypeEnum.SUBTYPE_VIDEO_HOSTED,
+            activity_uuid=activity_uuid,
+            org_id=coursechapter.org_id,
+            course_id=coursechapter.course_id,
+            content={
+                "filename": "video." + video_format,
+                "activity_uuid": activity_uuid,
+            },
+            details=details if isinstance(details, dict) else json.loads(details),
+            creation_date=str(datetime.now()),
+            update_date=str(datetime.now()),
+        )
 
     try:
         # 1. Create activity in DB (not committed yet)

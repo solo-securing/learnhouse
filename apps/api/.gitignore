@@ -168,3 +168,5 @@ cython_debug/
 Pipfile
 Pipfile.lock
 run.py
+
+/config/gg_drive_credentials/

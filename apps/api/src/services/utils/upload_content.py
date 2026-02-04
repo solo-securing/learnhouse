@@ -9,7 +9,7 @@ from src.security.file_validation import validate_upload
 from concurrent.futures import ThreadPoolExecutor
 
 
-CHUNK_SIZE = 5 * 1024 * 1024  # 5 MB
+CHUNK_SIZE = 10 * 1024 * 1024  # 10 MB
 executor = ThreadPoolExecutor(max_workers=2)
 
 
@@ -89,11 +89,10 @@ async def upload_content(
                 detail=f"File format {file_format} not allowed",
             )
 
-    file_path = f"content/{type_of_dir}/{uuid}/{directory}/{file_and_format}"
-    ensure_directory_exists(f"content/{type_of_dir}/{uuid}/{directory}")
-
     if content_delivery == "filesystem":
         # Upload to filesystem using async I/O
+        file_path = f"content/{type_of_dir}/{uuid}/{directory}/{file_and_format}"
+        ensure_directory_exists(f"content/{type_of_dir}/{uuid}/{directory}")
         await _upload_to_filesystem(file_obj, file_path)
 
     elif content_delivery == "s3api":

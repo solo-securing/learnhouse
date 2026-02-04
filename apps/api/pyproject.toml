@@ -39,6 +39,9 @@ dependencies = [
     "sentry-sdk[fastapi]>=2.19.0",
     "protobuf>=6.33.5",
     "workos>=5.0.0",
+    "google-api-python-client>=2.189.0",
+    "google-auth-httplib2>=0.3.0",
+    "google-auth-oauthlib>=1.2.4",
 ]
 
 [tool.ruff]
@@ -57,4 +60,9 @@ filterwarnings = [
     "ignore:.*utcnow.*deprecated.*",
     "ignore:.*Instrumentation will have no effect.*",
     "ignore:.*handler names should be lower-case.*",
+]
+
+[tool.uv.workspace]
+members = [
+    "tmp/gg_drive_upload",
 ]
