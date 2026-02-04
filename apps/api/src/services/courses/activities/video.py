@@ -101,38 +101,20 @@ async def create_video_activity(
     learnhouse_config = get_learnhouse_config()
     video_storage_type = learnhouse_config.video_storage_config.type
 
-    if video_storage_type == "ggdrive":
-        activity_object = Activity(
-            name=name,
-            activity_type=ActivityTypeEnum.TYPE_VIDEO,
-            activity_sub_type=ActivitySubTypeEnum.SUBTYPE_VIDEO_GGDRIVE,
-            activity_uuid=activity_uuid,
-            org_id=coursechapter.org_id,
-            course_id=coursechapter.course_id,
-            content={
-                "shareable_link": "",
-                "activity_uuid": activity_uuid,
-            },
-            details=details if isinstance(details, dict) else json.loads(details),
-            creation_date=str(datetime.now()),
-            update_date=str(datetime.now()),
-        )
-    else:
-        activity_object = Activity(
-            name=name,
-            activity_type=ActivityTypeEnum.TYPE_VIDEO,
-            activity_sub_type=ActivitySubTypeEnum.SUBTYPE_VIDEO_HOSTED,
-            activity_uuid=activity_uuid,
-            org_id=coursechapter.org_id,
-            course_id=coursechapter.course_id,
-            content={
-                "filename": "video." + video_format,
-                "activity_uuid": activity_uuid,
-            },
-            details=details if isinstance(details, dict) else json.loads(details),
-            creation_date=str(datetime.now()),
-            update_date=str(datetime.now()),
-        )
+    activity_object = Activity(
+        name=name,
+        activity_type=ActivityTypeEnum.TYPE_VIDEO,
+        activity_sub_type=ActivitySubTypeEnum.SUBTYPE_VIDEO_HOSTED,
+        activity_uuid=activity_uuid,
+        org_id=coursechapter.org_id,
+        course_id=coursechapter.course_id,
+        content={
+            "activity_uuid": activity_uuid,
+        },
+        details=details if isinstance(details, dict) else json.loads(details),
+        creation_date=str(datetime.now()),
+        update_date=str(datetime.now()),
+    )
 
     try:
         # 1. Create activity in DB (not committed yet)
@@ -142,12 +124,28 @@ async def create_video_activity(
         
         # 2. Upload video - Raise HTTPException if upload fails
         if video_file and organization and course:
-            await upload_video(
+            result = await upload_video(
                 video_file,
                 activity.activity_uuid,
                 organization.org_uuid,
                 course.course_uuid,
             )
+
+            # Update activity.content if video_storage_type is ggdrive
+            if video_storage_type == "ggdrive" and "shareable_link" in result:
+                activity.content = {
+                    **activity.content,
+                    "shareable_link": result["shareable_link"]
+                }
+                db_session.add(activity)
+                db_session.flush()
+            else:
+                activity.content = {
+                    **activity.content,
+                    "filename": f"video.{video_format}"
+                }
+                db_session.add(activity)
+                db_session.flush()
         
         # 3. Create ChapterActivity link - Lock the rows for this chapter to prevent race conditions
         chapter_lock_stmt = (
